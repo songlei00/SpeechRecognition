@@ -1,26 +1,77 @@
-FROM tensorflow/tensorflow:1.13.2-gpu-py3
-# FROM tensorflow/tensorflow:1.13.2-gpu-py3-jupyter
-MAINTAINER SongLei s974534426@gmail.com
+# 语音指令识别
 
-# docker pull tensorflow/tensorflow:1.12.0-devel-gpu-py3
+## 1. 目录结构
 
-RUN apt-get update \
-	&& pip config --global set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
-	&& pip config --global set install.trusted-host mirrors.aliyun.com \
-	&& pip install opencv-python==3.4.0.14 matplotlib pandas scipy \
-	&& apt-get -y install apt-file \
-	&& apt-file update \
-	&& apt-get -y install libsm6 libxrender1 libxext6 \
-	&& apt-get -y upgrade \
-	&& apt-get -y install python-pydot python-pydot-ng graphviz \
-	&& pip install pydot graphviz
+```
+├── dataset            // 数据集
+│   ├── README.md
+│   ├── test           // 测试集，其中包括go，left，off，on，right，stop六个文件夹
+│   └── train          // 训练集，其中包括go，left，off，on，right，stop六个文件夹
+├── densenet           // 训练完成的densenet网络权重
+├── densenet.png       // densenet网络结构图，使用keras.utils.plot_model绘制
+├── densenet.py        // densenet网络实现代码
+├── main.ipynb         // 训练主代码，详情见notebook中的注释
+├── README.md
+├── resnet50.py        // resnet网络实现代码
+├── resnet.png         // resnet网络结构图，使用keras.utils.plot_model绘制
+├── resnet_weight      // 训练完成的resnet网络权重
+├── test.py            // 测试代码，使用集成的模型进行测试
+├── tools.py           // 其他代码，包括读取数据、数据特征提取代码
+├── vggnet19.py        // vgg网络实现代码
+├── vgg_net_weight     // 训练完成的vgg网络权重
+├── vgg.png            // vgg网络结构图，使用keras.utils.plot_model绘制
+└── warmup_cosdecay.py // 余弦退火加warmup的代码
+```
 
-CMD /bin/bash
+## 2. 运行方式
 
-docker build -t songlei/tf:1.13 .
-sudo docker run -v $PWD:/data -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=unix$DISPLAY --gpus all -it songlei/tf:1.13 /bin/bash
+运行环境为ubuntu18.04。
 
-sudo docker run --gpus all -it tensorflow/tensorflow:1.12.0-devel-gpu-py3 /bin/bash
+### 2.1. 训练
 
-sudo apt install llvm-9
-export LLVM_CONFIG="/usr/bin/llvm-config-9"
+进入jupyter依次运行数据读取、数据增强、提取mfcc特征、提取logmelspectrum特征四大块(具体代码分块情况见main.ipynb中的注释)，然后执行需要训练的网络的对应代码，完成训练。
+
+### 2.2. 测试
+
+使用测试脚本```test.py```，该脚本会读取```test_path```下的测试数据，进行特征提取、模型加载和集成并最终输入测试集上的预测准确率。注意**要求test_path文件夹下，将不同类别的语音放在对应名称为label的对应文件夹下，并且test_path要以左斜线结尾**，例如我的测试目录树是这样的：
+
+```
+dataset
+├── README.md
+├── test
+│   ├── go
+│   ├── left
+│   ├── off
+│   ├── on
+│   ├── right
+│   └── stop
+└── train
+    ├── go
+    ├── left
+    ├── off
+    ├── on
+    ├── right
+    └── stop
+```
+
+对应测试命令如下：
+
+```python3 test.py --test_path=dataset/test/```
+
+输出结果为：
+
+```accuracy: 0.9065743944636678```
+
+## 3. 实验思路及结果
+
+简要思路如下，详细思路见实验报告。
+
+我选择将left、right、stop作为识别词，go、on、off作为剩余词进行分类。
+
+代码提取了语音文件的mfcc特征和logmelspectrum特征，然后使用mfcc训练vgg19，使用logmelspectrum训练resnet和densenet网络，最终结果如下：
+
+| 模型 | vgg | resnet | densenet | 集成三个模型 |
+| ------ | ------ | ------ | ------ | ------ |
+| 准确率 | 85.47 | 86.85 | 85.12 | 90.66 |
+
+三个网络模型的效果基本差不多，集成后取得了很大的提升，提升的原因我认为主要是同时利用了mfcc和logmelspectrum两种特征。

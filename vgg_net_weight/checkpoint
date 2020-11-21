@@ -1,0 +1,2 @@
+model_checkpoint_path: "vgg19_net"
+all_model_checkpoint_paths: "vgg19_net"
